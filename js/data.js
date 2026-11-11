@@ -129,7 +129,8 @@
   const PARAM_RANGES = {
     cabinet: {
       width: [300, 1600, 10], height: [300, 2400, 10], depth: [250, 700, 10],
-      shelves: [0, 8, 1], doors: [0, 4, 1], doorSections: [1, 4, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
+      shelves: [0, 8, 1], shelfSections: [1, 4, 1], doors: [0, 4, 1], doorSections: [1, 4, 1],
+      doorWidth: [0, 1600, 1], doorHeight: [0, 2400, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
     },
     chest: {
       width: [400, 1800, 10], height: [450, 1400, 10], depth: [350, 700, 10],
@@ -137,7 +138,7 @@
     },
     rack: {
       width: [300, 2400, 10], height: [600, 2700, 10], depth: [200, 600, 10],
-      shelves: [0, 10, 1], doors: [0, 0, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
+      shelves: [0, 10, 1], shelfSections: [1, 4, 1], doors: [0, 0, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
     },
   };
 
@@ -161,9 +162,9 @@
       return { width: 900, height: 800, depth: 450, shelves: 0, doors: 0, drawers: 3, plinth: 60, doorGap: 3, back: true };
     }
     if (template === "rack") {
-      return { width: 800, height: 1800, depth: 350, shelves: 4, doors: 0, drawers: 0, plinth: 0, doorGap: 0, back: false };
+      return { width: 800, height: 1800, depth: 350, shelves: 4, shelfSections: 1, doors: 0, drawers: 0, plinth: 0, doorGap: 0, back: false };
     }
-    return { width: 800, height: 860, depth: 560, shelves: 1, doors: 2, doorSections: 1, drawers: 0, plinth: 100, doorGap: 3, back: true };
+    return { width: 800, height: 860, depth: 560, shelves: 1, shelfSections: 1, doors: 2, doorSections: 1, doorWidth: 0, doorHeight: 0, drawers: 0, plinth: 100, doorGap: 3, back: true };
   }
 
   function normalizeShelfRemoval(value, shelves) {

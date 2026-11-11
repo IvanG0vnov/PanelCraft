@@ -453,8 +453,8 @@ textarea.input { height: auto; padding: 10px 11px; resize: vertical; }
 .param-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
 .param-row .field-label { font-size: 12px; }
 .param-note { font-size: 10.5px; color: var(--faint); margin-top: -4px; }
-.door-sections-group { display: flex; flex-direction: column; gap: 5px; }
-.door-sections-group .param-note { margin-top: 0; }
+.door-sections-group, .shelf-sections-group, .door-size-group { display: flex; flex-direction: column; gap: 5px; }
+.door-sections-group .param-note, .shelf-sections-group .param-note, .door-size-group .param-note { margin-top: 0; }
 .dimension-control { display: flex; flex-direction: column; gap: 5px; }
 .dimension-head { display: flex; align-items: center; justify-content: space-between; }
 .dimension-head span:first-child { font-size: 12px; font-weight: 600; }
@@ -506,6 +506,8 @@ textarea.input { height: auto; padding: 10px 11px; resize: vertical; }
 }
 .preview-resize-handle--w { width: 14px; height: 46px; cursor: ew-resize; }
 .preview-resize-handle--h { width: 46px; height: 14px; cursor: ns-resize; }
+.preview-resize-handle--door { width: 12px; height: 34px; }
+.preview-resize-handle--door.preview-resize-handle--h { width: 34px; height: 12px; }
 .preview-resize-handle--h::before {
   width: 18px; height: 4px;
   background: repeating-linear-gradient(to right, var(--accent) 0 1px, transparent 1px 4px);

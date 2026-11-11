@@ -78,14 +78,15 @@
   function previewControls(item) {
     const ranges = Data.PARAM_RANGES[item.template];
     const rows = [];
-    if (item.template === "cabinet" || item.template === "rack") rows.push("shelves");
+    if (item.template === "cabinet" || item.template === "rack") rows.push("shelves", "shelfSections");
     if (item.template === "cabinet") rows.push("doors", "doorSections");
     if (item.template === "chest") rows.push("drawers");
     return rows.map((key) => {
       const [min, max] = ranges[key];
       const value = Number(item.params[key]) || 0;
       const label = I18n.t(`params.${key}`);
-      const hidden = key === "doorSections" && !(Number(item.params.doors) > 0);
+      const hidden = (key === "doorSections" && !(Number(item.params.doors) > 0))
+        || (key === "shelfSections" && !(Number(item.params.shelves) > 0));
       return `<div class="preview-stepper" data-preview-stepper="${key}"${hidden ? " hidden" : ""}>
         <span class="ps-label">${esc(label)}</span>
         <button type="button" class="ps-btn" data-preview-step="${key}" data-dir="-1" aria-label="${esc(`${label} −`)}" ${value <= min ? "disabled" : ""}>${UI.icon("minus")}</button>
@@ -114,6 +115,7 @@
   }
 
   function paramsMarkup(project, item) {
+    const ranges = Data.PARAM_RANGES[item.template];
     const isCabinet = item.template === "cabinet";
     const isChest = item.template === "chest";
     const isRack = item.template === "rack";
@@ -146,6 +148,10 @@
             <span class="param-note">${esc(I18n.t("params.backThicknessHint"))}</span>
           </div>` : ""}
           ${isChest ? "" : stepperRow(item, "shelves")}
+          ${isChest ? "" : `<div class="shelf-sections-group" data-shelf-sections-group ${item.params.shelves > 0 ? "" : "hidden"}>
+            ${stepperRow(item, "shelfSections")}
+            <span class="param-note">${esc(I18n.t("params.shelfSectionsHint"))}</span>
+          </div>`}
           ${item.params.shelves > 0 && !isChest ? `<span class="param-note">${esc(I18n.t("params.shelvesHint"))}</span>` : ""}
           ${numberRow(item, "plinth", `${I18n.t("common.mm")} · 0–200`, 0, 200, "params.plinthHeight")}
         </div>
@@ -162,6 +168,11 @@
           ${isCabinet ? `<div class="door-sections-group" data-door-sections-group ${item.params.doors > 0 ? "" : "hidden"}>
             ${stepperRow(item, "doorSections")}
             <span class="param-note">${esc(I18n.t("params.doorSectionsHint"))}</span>
+          </div>` : ""}
+          ${isCabinet ? `<div class="door-size-group" data-door-size-group ${item.params.doors > 0 ? "" : "hidden"}>
+            ${numberRow(item, "doorWidth", `${I18n.t("common.mm")} · ${I18n.t("params.autoZero")}`, 0, ranges.doorWidth[1])}
+            ${numberRow(item, "doorHeight", `${I18n.t("common.mm")} · ${I18n.t("params.autoZero")}`, 0, ranges.doorHeight[1])}
+            <span class="param-note">${esc(I18n.t("params.doorSizeHint"))}</span>
           </div>` : ""}
           ${isChest ? stepperRow(item, "drawers") : ""}
           ${hasFacade ? numberRow(item, "doorGap", `${I18n.t("common.mm")} · 2–8`, 2, 8) : ""}
@@ -309,6 +320,8 @@
                 <span class="preview-badge badge badge-outline" data-preview-note>${esc(previewNote(item))}</span>
                 <button type="button" class="preview-resize-handle preview-resize-handle--w" data-resize="width" title="${esc(I18n.t("designer.resizeWidth"))}" aria-label="${esc(I18n.t("designer.resizeWidth"))}"></button>
                 <button type="button" class="preview-resize-handle preview-resize-handle--h" data-resize="height" title="${esc(I18n.t("designer.resizeHeight"))}" aria-label="${esc(I18n.t("designer.resizeHeight"))}"></button>
+                <button type="button" class="preview-resize-handle preview-resize-handle--w preview-resize-handle--door" data-resize="doorWidth" title="${esc(I18n.t("designer.resizeDoorWidth"))}" aria-label="${esc(I18n.t("designer.resizeDoorWidth"))}"></button>
+                <button type="button" class="preview-resize-handle preview-resize-handle--h preview-resize-handle--door" data-resize="doorHeight" title="${esc(I18n.t("designer.resizeDoorHeight"))}" aria-label="${esc(I18n.t("designer.resizeDoorHeight"))}"></button>
               </div>
               <div class="preview-controls" data-preview-controls>
                 ${previewControls(item)}
@@ -420,45 +433,60 @@
     ctx.fillStyle = interior;
     ctx.fillRect(tx(g.t), ty(g.H - g.t), (g.W - 2 * g.t) * scale, Math.max(0, (g.H - 2 * g.t) * scale));
 
-    /* Shelves */
+    /* Shelves & vertical sections */
     const nShelves = Math.max(0, Math.round(Number(p.shelves) || 0));
     const removedShelves = Data.shelfRemovalSet(item);
     const shelfHits = [];
     const accentColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#c1541c";
+    const shelfComp = Model.shelfSectionMetrics(item, g.W - 2 * g.t, g.t);
+    if (item.template !== "chest" && nShelves > 0) {
+      for (let k = 1; k < shelfComp.count; k += 1) {
+        const dx = g.t + k * shelfComp.width + (k - 1) * g.t;
+        ctx.fillStyle = Utils.shade(bodyColor, isLightBody ? (schematic ? -8 : -3) : (schematic ? 12 : 6));
+        ctx.fillRect(tx(dx), ty(g.H - g.t), Math.max(1, g.t * scale), Math.max(0, (g.H - 2 * g.t) * scale));
+        if (schematic) {
+          ctx.strokeStyle = Utils.rgba(edgeInk, 0.7);
+          ctx.lineWidth = 1;
+          ctx.strokeRect(tx(dx) + 0.5, ty(g.H - g.t) + 0.5, Math.max(1, g.t * scale) - 1, Math.max(1, (g.H - 2 * g.t) * scale) - 1);
+        }
+      }
+    }
     if (item.template !== "chest") {
       for (let slot = 1; slot <= nShelves; slot += 1) {
         const z = g.t + (g.H - 2 * g.t) * (slot / (nShelves + 1));
-        const sx = tx(g.t + 1);
-        const sy = ty(z + g.t / 2);
-        const sW = Math.max(0, (g.W - 2 * g.t - 2) * scale);
-        const sH = Math.max(1, g.t * scale);
         const removed = removedShelves.has(slot);
         const hovered = schematic && hoverShelfSlot === slot;
-        if (hovered && !removed) {
-          ctx.fillStyle = Utils.rgba(accentColor, isDark ? 0.18 : 0.1);
-          ctx.fillRect(sx - 2, sy - 8, sW + 4, sH + 16);
-        }
-        if (!removed) {
-          ctx.fillStyle = Utils.shade(bodyColor, isLightBody ? (schematic ? -13 : -4) : (schematic ? 16 : 8));
-          ctx.fillRect(sx, sy, sW, sH);
-          if (schematic) {
-            ctx.strokeStyle = hovered ? accentColor : Utils.rgba(edgeInk, 0.7);
-            ctx.lineWidth = hovered ? 1.4 : 1;
-            ctx.strokeRect(sx + 0.5, sy + 0.5, Math.max(0, sW - 1), Math.max(0, sH - 1));
-          }
-        } else if (schematic) {
-          ctx.strokeStyle = hovered ? accentColor : Utils.rgba(faint, 0.55);
-          ctx.lineWidth = hovered ? 1.4 : 1;
-          ctx.setLineDash([5, 4]);
-          ctx.beginPath();
-          ctx.moveTo(sx, sy + sH / 2);
-          ctx.lineTo(sx + sW, sy + sH / 2);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+        const sH = Math.max(1, g.t * scale);
         if (schematic) {
           const hitH = Math.max(18, sH + 12);
-          shelfHits.push({ slot, x: sx, y: sy + sH / 2 - hitH / 2, w: sW, h: hitH });
+          shelfHits.push({ slot, x: tx(g.t + 1), y: ty(z + g.t / 2) + sH / 2 - hitH / 2, w: Math.max(0, (g.W - 2 * g.t - 2) * scale), h: hitH });
+        }
+        for (let k = 0; k < shelfComp.count; k += 1) {
+          const sx = tx(g.t + k * (shelfComp.width + g.t) + 1);
+          const sy = ty(z + g.t / 2);
+          const sW = Math.max(0, (shelfComp.width - 2) * scale);
+          if (hovered && !removed) {
+            ctx.fillStyle = Utils.rgba(accentColor, isDark ? 0.18 : 0.1);
+            ctx.fillRect(sx - 2, sy - 8, sW + 4, sH + 16);
+          }
+          if (!removed) {
+            ctx.fillStyle = Utils.shade(bodyColor, isLightBody ? (schematic ? -13 : -4) : (schematic ? 16 : 8));
+            ctx.fillRect(sx, sy, sW, sH);
+            if (schematic) {
+              ctx.strokeStyle = hovered ? accentColor : Utils.rgba(edgeInk, 0.7);
+              ctx.lineWidth = hovered ? 1.4 : 1;
+              ctx.strokeRect(sx + 0.5, sy + 0.5, Math.max(0, sW - 1), Math.max(0, sH - 1));
+            }
+          } else if (schematic) {
+            ctx.strokeStyle = hovered ? accentColor : Utils.rgba(faint, 0.55);
+            ctx.lineWidth = hovered ? 1.4 : 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy + sH / 2);
+            ctx.lineTo(sx + sW, sy + sH / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
         }
       }
     }
@@ -475,27 +503,24 @@
     }
 
     /* Door / drawer fronts */
-    if (item.template === "cabinet" && p.doors > 0) {
-      const n = Math.max(1, Math.round(Number(p.doors)));
-      const sections = Math.max(1, Math.round(Number(p.doorSections) || 1));
-      const doorW = (g.W - (n + 1) * g.gap) / n;
-      const doorH = g.H - g.plinth - 2 * g.gap;
-      const sectionH = (doorH - (sections - 1) * g.gap) / sections;
+    const doorLayout = item.template === "cabinet" ? Model.doorMetrics(item, g.t) : null;
+    if (item.template === "cabinet" && doorLayout) {
+      const { count, sections, width, sectionH } = doorLayout;
       const facadeEdge = Utils.isLight(facadeColor) ? Utils.shade(facadeColor, -35) : Utils.shade(facadeColor, 22);
-      for (let i = 0; i < n; i += 1) {
-        const x = g.gap + i * (doorW + g.gap);
-        const handleX = n === 1
-          ? x + doorW - Math.min(28, doorW * 0.12)
-          : i < n / 2 ? x + doorW - Math.min(26, doorW * 0.12) : x + Math.min(26, doorW * 0.12);
+      for (let i = 0; i < count; i += 1) {
+        const x = doorLayout.xAt(i);
+        const handleX = count === 1
+          ? x + width - Math.min(28, width * 0.12)
+          : i < count / 2 ? x + width - Math.min(26, width * 0.12) : x + Math.min(26, width * 0.12);
         for (let s = 0; s < sections; s += 1) {
-          const z = g.plinth + g.gap + s * (sectionH + g.gap);
+          const z = doorLayout.zBase + s * (sectionH + g.gap);
           const y = ty(z + sectionH);
           ctx.fillStyle = Utils.rgba(facadeColor, schematic ? 0.07 : 0.82);
-          ctx.fillRect(tx(x), y, Math.max(1, doorW * scale), Math.max(1, sectionH * scale));
+          ctx.fillRect(tx(x), y, Math.max(1, width * scale), Math.max(1, sectionH * scale));
           ctx.strokeStyle = facadeEdge;
           ctx.lineWidth = 1.2;
           if (schematic) ctx.setLineDash([6, 4]);
-          ctx.strokeRect(tx(x) + 0.5, y + 0.5, Math.max(1, doorW * scale) - 1, Math.max(1, sectionH * scale) - 1);
+          ctx.strokeRect(tx(x) + 0.5, y + 0.5, Math.max(1, width * scale) - 1, Math.max(1, sectionH * scale) - 1);
           ctx.setLineDash([]);
 
           if (!schematic) {
@@ -607,7 +632,16 @@
     ctx.fillStyle = faint;
     ctx.fillText(depthText, ox + drawW - textW + 7, oy - 16);
 
-    return { ox, oy, drawW, drawH, scale, shelfHits };
+    let doorHandles = null;
+    if (doorLayout && doorLayout.width > 30 && doorLayout.height > 30) {
+      const firstX = doorLayout.xAt(0);
+      doorHandles = {
+        width: { x: tx(firstX), y: ty(doorLayout.zBase + doorLayout.height / 2), value: doorLayout.width, max: doorLayout.slotW },
+        height: { x: tx(firstX + doorLayout.width / 2), y: ty(doorLayout.zBase + doorLayout.height), value: doorLayout.height, max: doorLayout.openH },
+      };
+    }
+
+    return { ox, oy, drawW, drawH, scale, shelfHits, doorHandles };
   }
 
   function drawIso(canvas, project, item) {
@@ -712,6 +746,8 @@
     if (!wrap) return;
     const widthHandle = wrap.querySelector("[data-resize='width']");
     const heightHandle = wrap.querySelector("[data-resize='height']");
+    const doorWidthHandle = wrap.querySelector("[data-resize='doorWidth']");
+    const doorHeightHandle = wrap.querySelector("[data-resize='doorHeight']");
     const show = Boolean(previewGeometry);
     const hide = (handle) => {
       if (!handle) return;
@@ -720,6 +756,8 @@
     if (!show) {
       hide(widthHandle);
       hide(heightHandle);
+      hide(doorWidthHandle);
+      hide(doorHeightHandle);
       return;
     }
     if (widthHandle) {
@@ -731,6 +769,25 @@
       heightHandle.style.display = "";
       heightHandle.style.left = `${previewGeometry.ox + previewGeometry.drawW / 2}px`;
       heightHandle.style.top = `${previewGeometry.oy}px`;
+    }
+    const doorHandles = previewGeometry.doorHandles;
+    if (doorWidthHandle) {
+      if (!doorHandles) {
+        hide(doorWidthHandle);
+      } else {
+        doorWidthHandle.style.display = "";
+        doorWidthHandle.style.left = `${doorHandles.width.x}px`;
+        doorWidthHandle.style.top = `${doorHandles.width.y}px`;
+      }
+    }
+    if (doorHeightHandle) {
+      if (!doorHandles) {
+        hide(doorHeightHandle);
+      } else {
+        doorHeightHandle.style.display = "";
+        doorHeightHandle.style.left = `${doorHandles.height.x}px`;
+        doorHeightHandle.style.top = `${doorHandles.height.y}px`;
+      }
     }
   }
 
@@ -780,6 +837,8 @@
     });
     const sectionStepper = view.querySelector("[data-preview-stepper='doorSections']");
     if (sectionStepper) sectionStepper.hidden = !(Number(item.params.doors) > 0);
+    const shelfSectionStepper = view.querySelector("[data-preview-stepper='shelfSections']");
+    if (shelfSectionStepper) shelfSectionStepper.hidden = !(Number(item.params.shelves) > 0);
   }
 
   function updatePreviewModeUi(view, item) {
@@ -787,8 +846,11 @@
     if (note) note.textContent = previewNote(item);
     const hint = view.querySelector("[data-preview-hint]");
     if (hint) hint.textContent = previewHint(item);
-    view.querySelectorAll("[data-door-sections-group]").forEach((group) => {
+    view.querySelectorAll("[data-door-sections-group], [data-door-size-group]").forEach((group) => {
       group.hidden = !(Number(item.params.doors) > 0);
+    });
+    view.querySelectorAll("[data-shelf-sections-group]").forEach((group) => {
+      group.hidden = !(Number(item.params.shelves) > 0);
     });
   }
 
@@ -851,6 +913,21 @@
     updateItemDerived(view);
   }
 
+  function bodyThickness(item) {
+    const project = App.project();
+    const body = Utils.materialById(project, item.bodyMaterialId) || (project.materials || [])[0];
+    return body ? body.thickness : 16;
+  }
+
+  function clampDoorDimension(item, key) {
+    const value = Number(item.params[key]) || 0;
+    if (value <= 0) return 0;
+    const metrics = Model.doorMetrics(item, bodyThickness(item));
+    if (!metrics) return 0;
+    const limit = key === "doorWidth" ? metrics.slotW : metrics.openH;
+    return Math.min(value, Math.max(1, limit));
+  }
+
   function setParam(view, key, raw) {
     const item = App.activeItem();
     if (!item) return;
@@ -860,12 +937,29 @@
     let value = UI.parseNumber(raw, item.params[key]);
     value = Math.round(Utils.clamp(value, range[0], range[1]) / range[2]) * range[2];
     item.params[key] = value;
+    if (key === "doorWidth" || key === "doorHeight") {
+      value = clampDoorDimension(item, key);
+      item.params[key] = value;
+    }
     if (key === "shelves") {
       item.params.removedShelves = Data.normalizeShelfRemoval(item.params.removedShelves, value);
+    }
+    const doorAffecting = key === "width" || key === "height" || key === "doors" || key === "doorGap" || key === "plinth";
+    if (doorAffecting) {
+      ["doorWidth", "doorHeight"].forEach((sizeKey) => {
+        if ((Number(item.params[sizeKey]) || 0) > 0) item.params[sizeKey] = clampDoorDimension(item, sizeKey);
+      });
     }
     view.querySelectorAll(`[data-param="${key}"]`).forEach((input) => {
       if (input.value !== String(value)) input.value = value;
     });
+    if (doorAffecting) {
+      ["doorWidth", "doorHeight"].forEach((sizeKey) => {
+        view.querySelectorAll(`[data-param="${sizeKey}"]`).forEach((input) => {
+          if (input.value !== String(item.params[sizeKey])) input.value = item.params[sizeKey];
+        });
+      });
+    }
     updateItemDerived(view);
   }
 
@@ -955,6 +1049,13 @@
     UI.toast(I18n.t("designer.duplicated"));
   }
 
+  function doorResizeInfo(axis) {
+    if (!previewGeometry || !previewGeometry.doorHandles) return null;
+    if (axis === "doorWidth") return previewGeometry.doorHandles.width;
+    if (axis === "doorHeight") return previewGeometry.doorHandles.height;
+    return null;
+  }
+
   function attachResizeHandle(handle, view) {
     let drag = null;
 
@@ -976,6 +1077,9 @@
       const axis = handle.getAttribute("data-resize");
       const range = Data.PARAM_RANGES[item.template][axis];
       if (!range) return;
+      const isDoorResize = axis === "doorWidth" || axis === "doorHeight";
+      const doorInfo = isDoorResize ? doorResizeInfo(axis) : null;
+      if (isDoorResize && !doorInfo) return;
       event.preventDefault();
       drag = {
         pointerId: event.pointerId,
@@ -983,7 +1087,9 @@
         itemId: item.id,
         startX: event.clientX,
         startY: event.clientY,
-        value: Number(item.params[axis]) || 0,
+        value: doorInfo ? doorInfo.value : Number(item.params[axis]) || 0,
+        min: doorInfo ? Math.min(30, doorInfo.max) : range[0],
+        max: doorInfo ? doorInfo.max : range[1],
         scale: previewGeometry.scale,
       };
       try { handle.setPointerCapture(event.pointerId); } catch (_) {}
@@ -998,10 +1104,13 @@
       if (!item || item.id !== drag.itemId) return;
       const range = Data.PARAM_RANGES[item.template][drag.axis];
       if (!range) return;
-      const delta = drag.axis === "width" ? event.clientX - drag.startX : drag.startY - event.clientY;
+      let delta;
+      if (drag.axis === "doorWidth") delta = drag.startX - event.clientX;
+      else if (drag.axis === "width") delta = event.clientX - drag.startX;
+      else delta = drag.startY - event.clientY;
       const raw = drag.value + delta / Math.max(0.05, drag.scale);
       const step = range[2];
-      const next = Math.round(Utils.clamp(raw, range[0], range[1]) / step) * step;
+      const next = Utils.clamp(Math.round(raw / step) * step, drag.min, drag.max);
       if (next !== item.params[drag.axis]) setParam(view, drag.axis, next);
     });
 
@@ -1018,8 +1127,14 @@
       if (!item) return;
       const range = Data.PARAM_RANGES[item.template][axis];
       if (!range) return;
+      const isDoorResize = axis === "doorWidth" || axis === "doorHeight";
+      const doorInfo = isDoorResize ? doorResizeInfo(axis) : null;
+      if (isDoorResize && !doorInfo) return;
       event.preventDefault();
-      setParam(view, axis, (Number(item.params[axis]) || 0) + (forward ? range[2] : -range[2]));
+      const base = doorInfo ? doorInfo.value : Number(item.params[axis]) || 0;
+      const min = doorInfo ? Math.min(30, doorInfo.max) : range[0];
+      const max = doorInfo ? doorInfo.max : range[1];
+      setParam(view, axis, Utils.clamp(base + (forward ? range[2] : -range[2]), min, max));
     });
   }
 
