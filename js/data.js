@@ -129,7 +129,7 @@
   const PARAM_RANGES = {
     cabinet: {
       width: [300, 1600, 10], height: [300, 2400, 10], depth: [250, 700, 10],
-      shelves: [0, 8, 1], doors: [0, 4, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
+      shelves: [0, 8, 1], doors: [0, 4, 1], doorSections: [1, 4, 1], drawers: [0, 0, 1], plinth: [0, 200, 10], doorGap: [2, 8, 1],
     },
     chest: {
       width: [400, 1800, 10], height: [450, 1400, 10], depth: [350, 700, 10],
@@ -143,8 +143,8 @@
 
   const TEMPLATES = ["cabinet", "chest", "rack"];
   const CURRENCIES = [
-    { code: "RUB", symbol: "₽" }, { code: "EUR", symbol: "€" }, { code: "USD", symbol: "$" },
-    { code: "KZT", symbol: "₸" }, { code: "UAH", symbol: "₴" }, { code: "GBP", symbol: "£" },
+    { code: "RUB", symbol: "₽" }, { code: "BYN", symbol: "Br" }, { code: "EUR", symbol: "€" },
+    { code: "USD", symbol: "$" }, { code: "KZT", symbol: "₸" }, { code: "UAH", symbol: "₴" }, { code: "GBP", symbol: "£" },
   ];
 
   function createDefaultMaterials() {
@@ -163,7 +163,26 @@
     if (template === "rack") {
       return { width: 800, height: 1800, depth: 350, shelves: 4, doors: 0, drawers: 0, plinth: 0, doorGap: 0, back: false };
     }
-    return { width: 800, height: 860, depth: 560, shelves: 1, doors: 2, drawers: 0, plinth: 100, doorGap: 3, back: true };
+    return { width: 800, height: 860, depth: 560, shelves: 1, doors: 2, doorSections: 1, drawers: 0, plinth: 100, doorGap: 3, back: true };
+  }
+
+  function normalizeShelfRemoval(value, shelves) {
+    const max = Math.max(0, Math.round(Number(shelves) || 0));
+    const seen = new Set();
+    const result = [];
+    (Array.isArray(value) ? value : []).forEach((entry) => {
+      const slot = Math.round(Number(entry));
+      if (Number.isFinite(slot) && slot >= 1 && slot <= max && !seen.has(slot)) {
+        seen.add(slot);
+        result.push(slot);
+      }
+    });
+    return result.sort((a, b) => a - b);
+  }
+
+  function shelfRemovalSet(item) {
+    const params = item && item.params ? item.params : {};
+    return new Set(normalizeShelfRemoval(params.removedShelves, params.shelves));
   }
 
   function createItem(template, options) {
@@ -177,6 +196,7 @@
     Object.keys(ranges).forEach((key) => {
       if (typeof params[key] === "number") params[key] = Utils.clamp(params[key], ranges[key][0], ranges[key][1]);
     });
+    params.removedShelves = normalizeShelfRemoval(params.removedShelves, params.shelves);
     return {
       id: opts.id || uid("item"),
       template: TEMPLATES.includes(template) ? template : "cabinet",
@@ -390,6 +410,8 @@
     createInitialState,
     createItem,
     baseParams,
+    normalizeShelfRemoval,
+    shelfRemovalSet,
     normalizeProject,
     normalizeState,
   };

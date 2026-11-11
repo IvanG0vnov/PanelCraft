@@ -8,6 +8,7 @@
   let activeItemId = null;
   let currentRoute = "designer";
   let loadError = false;
+  let savingSuspended = false;
 
   const saveSoon = Utils.debounce(() => saveNow(false), 400);
 
@@ -27,6 +28,7 @@
   }
 
   function saveNow(showToast) {
+    if (savingSuspended) return;
     try {
       state.project.updatedAt = new Date().toISOString();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -192,6 +194,17 @@
     UI.toast(I18n.t("project.newDone"));
   }
 
+  function clearAll() {
+    savingSuspended = true;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("panelcraft.theme");
+      localStorage.removeItem("panelcraft.lang");
+    } catch (_) {}
+    location.hash = "#/designer";
+    location.reload();
+  }
+
   function openHelp() {
     const steps = [1, 2, 3, 4].map((n) => `
       <div class="help-step">
@@ -263,6 +276,7 @@
     replaceProject,
     loadSample,
     newProject,
+    clearAll,
     saveNow,
     applyAppearance,
     toggleLanguage,

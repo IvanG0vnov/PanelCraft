@@ -5,6 +5,8 @@
   const esc = UI.esc;
   const fmt = (n) => Utils.formatMm(n);
   let previewMode = "front";
+  let previewGeometry = null;
+  let hoverShelfSlot = null;
   let resizeObserver = null;
   let requestRedraw = () => {};
 
@@ -59,6 +61,58 @@
     </div>`;
   }
 
+  function previewNote(item) {
+    if (previewMode === "layout") return I18n.t("designer.layoutNote");
+    const hasFronts = item.params.doors > 0 || item.params.drawers > 0;
+    return hasFronts ? I18n.t("designer.previewNote") : I18n.t("designer.itemToolbarHint");
+  }
+
+  function previewHint(item) {
+    const hasShelves = item.template === "cabinet" || item.template === "rack";
+    if (previewMode === "layout" && hasShelves && Number(item.params.shelves) > 0) {
+      return I18n.t("designer.layoutShelfHint");
+    }
+    return I18n.t("designer.resizeHint");
+  }
+
+  function previewControls(item) {
+    const ranges = Data.PARAM_RANGES[item.template];
+    const rows = [];
+    if (item.template === "cabinet" || item.template === "rack") rows.push("shelves");
+    if (item.template === "cabinet") rows.push("doors", "doorSections");
+    if (item.template === "chest") rows.push("drawers");
+    return rows.map((key) => {
+      const [min, max] = ranges[key];
+      const value = Number(item.params[key]) || 0;
+      const label = I18n.t(`params.${key}`);
+      const hidden = key === "doorSections" && !(Number(item.params.doors) > 0);
+      return `<div class="preview-stepper" data-preview-stepper="${key}"${hidden ? " hidden" : ""}>
+        <span class="ps-label">${esc(label)}</span>
+        <button type="button" class="ps-btn" data-preview-step="${key}" data-dir="-1" aria-label="${esc(`${label} −`)}" ${value <= min ? "disabled" : ""}>${UI.icon("minus")}</button>
+        <b data-preview-count="${key}">${value}</b>
+        <button type="button" class="ps-btn" data-preview-step="${key}" data-dir="1" aria-label="${esc(`${label} +`)}" ${value >= max ? "disabled" : ""}>${UI.icon("plus")}</button>
+      </div>`;
+    }).join("");
+  }
+
+  function previewCountSummary(item) {
+    const rows = [];
+    if (item.template === "cabinet" || item.template === "rack") {
+      const total = Number(item.params.shelves) || 0;
+      const removed = Data.shelfRemovalSet(item).size;
+      const active = Math.max(0, total - removed);
+      const extra = removed > 0 ? ` <span class="preview-count-total">/ ${total}</span>` : "";
+      rows.push(`<span>${esc(I18n.t("params.shelves"))} <b>${active}</b>${extra}</span>`);
+    }
+    if (item.template === "cabinet") {
+      rows.push(`<span>${esc(I18n.t("params.doors"))} <b>${Number(item.params.doors) || 0}</b></span>`);
+    }
+    if (item.template === "chest") {
+      rows.push(`<span>${esc(I18n.t("params.drawers"))} <b>${Number(item.params.drawers) || 0}</b></span>`);
+    }
+    return rows.join("");
+  }
+
   function paramsMarkup(project, item) {
     const isCabinet = item.template === "cabinet";
     const isChest = item.template === "chest";
@@ -105,6 +159,10 @@
             <select class="select" data-material="facadeMaterialId">${materialOptions(project, item.facadeMaterialId)}</select>
           </div>
           ${isCabinet ? stepperRow(item, "doors") : ""}
+          ${isCabinet ? `<div class="door-sections-group" data-door-sections-group ${item.params.doors > 0 ? "" : "hidden"}>
+            ${stepperRow(item, "doorSections")}
+            <span class="param-note">${esc(I18n.t("params.doorSectionsHint"))}</span>
+          </div>` : ""}
           ${isChest ? stepperRow(item, "drawers") : ""}
           ${hasFacade ? numberRow(item, "doorGap", `${I18n.t("common.mm")} · 2–8`, 2, 8) : ""}
           ${hasFacade ? `<span class="param-note">${esc(I18n.t("params.doorGapHint"))}</span>` : ""}
@@ -147,6 +205,7 @@
         <span>${esc(I18n.t("common.height"))} <b>${fmt(item.params.height)}</b></span>
         <span>${esc(I18n.t("common.depth"))} <b>${fmt(item.params.depth)}</b></span>
       </div>
+      <div class="preview-dim preview-dim-counts">${previewCountSummary(item)}</div>
       <div class="preview-dim">
         <span>${esc(I18n.t("designer.statArea"))} <b>${I18n.area(totals.areaM2)}</b></span>
         <span class="badge badge-outline">${item.params.back ? esc(I18n.t("designer.backType")) : esc(I18n.t("common.none"))}</span>
@@ -240,13 +299,20 @@
                 <div class="preview-tools">
                   <div class="segmented" role="group">
                     <button type="button" data-preview-mode="front" class="${previewMode === "front" ? "active" : ""}">${UI.icon("designer")}${esc(I18n.t("designer.front"))}</button>
+                    <button type="button" data-preview-mode="layout" class="${previewMode === "layout" ? "active" : ""}">${UI.icon("ruler")}${esc(I18n.t("designer.layout"))}</button>
                     <button type="button" data-preview-mode="iso" class="${previewMode === "iso" ? "active" : ""}">${UI.icon("box")}${esc(I18n.t("designer.iso"))}</button>
                   </div>
                 </div>
               </div>
-              <div class="preview-canvas-wrap" data-preview-wrap>
+              <div class="preview-canvas-wrap" data-preview-wrap data-mode="${esc(previewMode)}">
                 <canvas data-preview-canvas role="img" aria-label="${esc(I18n.t("designer.previewTitle"))}"></canvas>
-                <span class="preview-badge badge badge-outline" data-preview-note>${esc(item.params.doors > 0 ? I18n.t("designer.previewNote") : I18n.t("designer.itemToolbarHint"))}</span>
+                <span class="preview-badge badge badge-outline" data-preview-note>${esc(previewNote(item))}</span>
+                <button type="button" class="preview-resize-handle preview-resize-handle--w" data-resize="width" title="${esc(I18n.t("designer.resizeWidth"))}" aria-label="${esc(I18n.t("designer.resizeWidth"))}"></button>
+                <button type="button" class="preview-resize-handle preview-resize-handle--h" data-resize="height" title="${esc(I18n.t("designer.resizeHeight"))}" aria-label="${esc(I18n.t("designer.resizeHeight"))}"></button>
+              </div>
+              <div class="preview-controls" data-preview-controls>
+                ${previewControls(item)}
+                <span class="preview-resize-hint">${UI.icon("ruler")}<span data-preview-hint>${esc(previewHint(item))}</span></span>
               </div>
               <div class="preview-foot" data-preview-foot>${previewFooter(item, totals)}</div>
             </div>
@@ -300,9 +366,10 @@
     return { W: p.width, H: p.height, D: p.depth, t, plinth: p.plinth || 0, gap: p.doorGap || 0 };
   }
 
-  function drawFront(canvas, project, item) {
+  function drawFront(canvas, project, item, mode) {
+    const schematic = mode === "layout";
     const surface = setupCanvas(canvas);
-    if (!surface) return;
+    if (!surface) return null;
     const { ctx, W, H } = surface;
     const isDark = document.documentElement.dataset.theme === "dark";
     const ink = isDark ? "#d9dcd4" : "#3b3f38";
@@ -313,7 +380,7 @@
     item._bodyMat = bodyMat;
     const g = panelGeom(item);
     const p = item.params;
-    if (!bodyMat) return;
+    if (!bodyMat) return null;
     const bodyColor = bodyMat.color;
     const facadeColor = facadeMat.color;
     const backColor = backMat.color;
@@ -324,7 +391,7 @@
     const marginB = 54;
     const availW = W - marginL - marginR;
     const availH = H - marginT - marginB;
-    if (availW < 40 || availH < 40) return;
+    if (availW < 40 || availH < 40) return null;
     const scale = Math.min(availW / g.W, availH / g.H);
     const drawW = g.W * scale;
     const drawH = g.H * scale;
@@ -355,17 +422,45 @@
 
     /* Shelves */
     const nShelves = Math.max(0, Math.round(Number(p.shelves) || 0));
-    const shelfZ = [];
-    for (let i = 1; i <= nShelves; i += 1) shelfZ.push(g.t + (g.H - 2 * g.t) * (i / (nShelves + 1)));
-    const hasDoors = item.template === "cabinet" && p.doors > 0;
+    const removedShelves = Data.shelfRemovalSet(item);
+    const shelfHits = [];
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#c1541c";
     if (item.template !== "chest") {
-      shelfZ.forEach((z) => {
-        ctx.fillStyle = Utils.shade(bodyColor, isLightBody ? -4 : 8);
-        ctx.fillRect(tx(g.t + 1), ty(z + g.t / 2), Math.max(0, (g.W - 2 * g.t - 2) * scale), Math.max(1, g.t * scale));
-        if (hasDoors) {
-          ctx.fillStyle = "rgba(255,255,255,0)";
+      for (let slot = 1; slot <= nShelves; slot += 1) {
+        const z = g.t + (g.H - 2 * g.t) * (slot / (nShelves + 1));
+        const sx = tx(g.t + 1);
+        const sy = ty(z + g.t / 2);
+        const sW = Math.max(0, (g.W - 2 * g.t - 2) * scale);
+        const sH = Math.max(1, g.t * scale);
+        const removed = removedShelves.has(slot);
+        const hovered = schematic && hoverShelfSlot === slot;
+        if (hovered && !removed) {
+          ctx.fillStyle = Utils.rgba(accentColor, isDark ? 0.18 : 0.1);
+          ctx.fillRect(sx - 2, sy - 8, sW + 4, sH + 16);
         }
-      });
+        if (!removed) {
+          ctx.fillStyle = Utils.shade(bodyColor, isLightBody ? (schematic ? -13 : -4) : (schematic ? 16 : 8));
+          ctx.fillRect(sx, sy, sW, sH);
+          if (schematic) {
+            ctx.strokeStyle = hovered ? accentColor : Utils.rgba(edgeInk, 0.7);
+            ctx.lineWidth = hovered ? 1.4 : 1;
+            ctx.strokeRect(sx + 0.5, sy + 0.5, Math.max(0, sW - 1), Math.max(0, sH - 1));
+          }
+        } else if (schematic) {
+          ctx.strokeStyle = hovered ? accentColor : Utils.rgba(faint, 0.55);
+          ctx.lineWidth = hovered ? 1.4 : 1;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy + sH / 2);
+          ctx.lineTo(sx + sW, sy + sH / 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        if (schematic) {
+          const hitH = Math.max(18, sH + 12);
+          shelfHits.push({ slot, x: sx, y: sy + sH / 2 - hitH / 2, w: sW, h: hitH });
+        }
+      }
     }
 
     if (g.plinth > 0) {
@@ -382,30 +477,39 @@
     /* Door / drawer fronts */
     if (item.template === "cabinet" && p.doors > 0) {
       const n = Math.max(1, Math.round(Number(p.doors)));
+      const sections = Math.max(1, Math.round(Number(p.doorSections) || 1));
       const doorW = (g.W - (n + 1) * g.gap) / n;
       const doorH = g.H - g.plinth - 2 * g.gap;
+      const sectionH = (doorH - (sections - 1) * g.gap) / sections;
+      const facadeEdge = Utils.isLight(facadeColor) ? Utils.shade(facadeColor, -35) : Utils.shade(facadeColor, 22);
       for (let i = 0; i < n; i += 1) {
         const x = g.gap + i * (doorW + g.gap);
-        ctx.fillStyle = Utils.rgba(facadeColor, 0.82);
-        ctx.fillRect(tx(x), ty(g.plinth + g.gap + doorH), Math.max(1, doorW * scale), Math.max(1, doorH * scale));
-        ctx.strokeStyle = Utils.isLight(facadeColor) ? Utils.shade(facadeColor, -35) : Utils.shade(facadeColor, 22);
-        ctx.lineWidth = 1.2;
-        ctx.strokeRect(tx(x) + 0.5, ty(g.plinth + g.gap + doorH) + 0.5, Math.max(1, doorW * scale) - 1, Math.max(1, doorH * scale) - 1);
+        const handleX = n === 1
+          ? x + doorW - Math.min(28, doorW * 0.12)
+          : i < n / 2 ? x + doorW - Math.min(26, doorW * 0.12) : x + Math.min(26, doorW * 0.12);
+        for (let s = 0; s < sections; s += 1) {
+          const z = g.plinth + g.gap + s * (sectionH + g.gap);
+          const y = ty(z + sectionH);
+          ctx.fillStyle = Utils.rgba(facadeColor, schematic ? 0.07 : 0.82);
+          ctx.fillRect(tx(x), y, Math.max(1, doorW * scale), Math.max(1, sectionH * scale));
+          ctx.strokeStyle = facadeEdge;
+          ctx.lineWidth = 1.2;
+          if (schematic) ctx.setLineDash([6, 4]);
+          ctx.strokeRect(tx(x) + 0.5, y + 0.5, Math.max(1, doorW * scale) - 1, Math.max(1, sectionH * scale) - 1);
+          ctx.setLineDash([]);
 
-        /* handle */
-        const handleZ = g.plinth + (g.H - g.plinth) / 2;
-        let handleX;
-        if (n === 1) handleX = x + doorW - Math.min(28, doorW * 0.12);
-        else if (i < n / 2) handleX = x + doorW - Math.min(26, doorW * 0.12);
-        else handleX = x + Math.min(26, doorW * 0.12);
-        const handleH = Math.min(150, doorH * 0.32) * scale;
-        ctx.strokeStyle = isDark ? "#d9dcd4" : "#3a3e37";
-        ctx.lineWidth = 2.4;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(tx(handleX), ty(handleZ) - Math.max(9, handleH / 2));
-        ctx.lineTo(tx(handleX), ty(handleZ) + Math.max(9, handleH / 2));
-        ctx.stroke();
+          if (!schematic) {
+            const handleZ = z + sectionH / 2;
+            const handleH = Math.min(120, sectionH * 0.3) * scale;
+            ctx.strokeStyle = isDark ? "#d9dcd4" : "#3a3e37";
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(tx(handleX), ty(handleZ) - Math.max(9, handleH / 2));
+            ctx.lineTo(tx(handleX), ty(handleZ) + Math.max(9, handleH / 2));
+            ctx.stroke();
+          }
+        }
       }
     } else if (item.template === "chest" && p.drawers > 0) {
       const n = Math.max(1, Math.round(Number(p.drawers)));
@@ -413,22 +517,26 @@
       const frontW = g.W - 2 * g.gap;
       for (let i = 0; i < n; i += 1) {
         const z = g.plinth + g.gap + i * (frontH + g.gap);
-        ctx.fillStyle = Utils.rgba(facadeColor, 0.93);
+        ctx.fillStyle = Utils.rgba(facadeColor, schematic ? 0.07 : 0.93);
         ctx.fillRect(tx(g.gap), ty(z + frontH), Math.max(1, frontW * scale), Math.max(1, frontH * scale));
         ctx.strokeStyle = Utils.isLight(facadeColor) ? Utils.shade(facadeColor, -35) : Utils.shade(facadeColor, 22);
         ctx.lineWidth = 1.1;
+        if (schematic) ctx.setLineDash([6, 4]);
         ctx.strokeRect(tx(g.gap) + 0.5, ty(z + frontH) + 0.5, Math.max(1, frontW * scale) - 1, Math.max(1, frontH * scale) - 1);
-        /* horizontal handle */
-        const cx = tx(g.W / 2);
-        const cy = ty(z + frontH / 2);
-        const hw = Math.max(12, Math.min(110, frontW * 0.16) * scale);
-        ctx.strokeStyle = isDark ? "#d9dcd4" : "#353a33";
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.lineTo(cx + hw, cy);
-        ctx.stroke();
+        ctx.setLineDash([]);
+        if (!schematic) {
+          /* horizontal handle */
+          const cx = tx(g.W / 2);
+          const cy = ty(z + frontH / 2);
+          const hw = Math.max(12, Math.min(110, frontW * 0.16) * scale);
+          ctx.strokeStyle = isDark ? "#d9dcd4" : "#353a33";
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(cx - hw, cy);
+          ctx.lineTo(cx + hw, cy);
+          ctx.stroke();
+        }
       }
     }
 
@@ -498,6 +606,8 @@
     ctx.stroke();
     ctx.fillStyle = faint;
     ctx.fillText(depthText, ox + drawW - textW + 7, oy - 16);
+
+    return { ox, oy, drawW, drawH, scale, shelfHits };
   }
 
   function drawIso(canvas, project, item) {
@@ -597,14 +707,48 @@
     ctx.fillText(`${fmt(item.params.width)} × ${fmt(item.params.height)} × ${fmt(item.params.depth)} ${I18n.t("common.mm")}`, W / 2, H - 18);
   }
 
+  function updateResizeHandles() {
+    const wrap = document.querySelector("[data-preview-wrap]");
+    if (!wrap) return;
+    const widthHandle = wrap.querySelector("[data-resize='width']");
+    const heightHandle = wrap.querySelector("[data-resize='height']");
+    const show = Boolean(previewGeometry);
+    const hide = (handle) => {
+      if (!handle) return;
+      handle.style.display = "none";
+    };
+    if (!show) {
+      hide(widthHandle);
+      hide(heightHandle);
+      return;
+    }
+    if (widthHandle) {
+      widthHandle.style.display = "";
+      widthHandle.style.left = `${previewGeometry.ox + previewGeometry.drawW}px`;
+      widthHandle.style.top = `${previewGeometry.oy + previewGeometry.drawH / 2}px`;
+    }
+    if (heightHandle) {
+      heightHandle.style.display = "";
+      heightHandle.style.left = `${previewGeometry.ox + previewGeometry.drawW / 2}px`;
+      heightHandle.style.top = `${previewGeometry.oy}px`;
+    }
+  }
+
   function drawPreview() {
     const canvas = document.querySelector("[data-preview-canvas]");
     if (!canvas) return;
     const project = App.project();
     const item = App.activeItem();
     if (!item) return;
-    if (previewMode === "iso") drawIso(canvas, project, item);
-    else drawFront(canvas, project, item);
+    const wrap = canvas.parentElement;
+    if (wrap) wrap.dataset.mode = previewMode;
+    if (previewMode === "iso") {
+      previewGeometry = null;
+      drawIso(canvas, project, item);
+    } else {
+      previewGeometry = drawFront(canvas, project, item, previewMode);
+    }
+    updateResizeHandles();
   }
 
   /* --------------------------------------------------------------- partial */
@@ -617,6 +761,34 @@
       if (!range) return;
       const value = item.params[key];
       btn.disabled = (btn.getAttribute("data-step") === "-1" && value <= range[0]) || (btn.getAttribute("data-step") === "1" && value >= range[1]);
+    });
+  }
+
+  function syncPreviewControls(view, item) {
+    const ranges = Data.PARAM_RANGES[item.template];
+    view.querySelectorAll("[data-preview-step]").forEach((btn) => {
+      const key = btn.getAttribute("data-preview-step");
+      const range = ranges[key];
+      if (!range) return;
+      const value = Number(item.params[key]) || 0;
+      const dir = Number(btn.getAttribute("data-dir")) || 0;
+      btn.disabled = dir < 0 ? value <= range[0] : value >= range[1];
+    });
+    view.querySelectorAll("[data-preview-count]").forEach((el) => {
+      const key = el.getAttribute("data-preview-count");
+      el.textContent = String(Number(item.params[key]) || 0);
+    });
+    const sectionStepper = view.querySelector("[data-preview-stepper='doorSections']");
+    if (sectionStepper) sectionStepper.hidden = !(Number(item.params.doors) > 0);
+  }
+
+  function updatePreviewModeUi(view, item) {
+    const note = view.querySelector("[data-preview-note]");
+    if (note) note.textContent = previewNote(item);
+    const hint = view.querySelector("[data-preview-hint]");
+    if (hint) hint.textContent = previewHint(item);
+    view.querySelectorAll("[data-door-sections-group]").forEach((group) => {
+      group.hidden = !(Number(item.params.doors) > 0);
     });
   }
 
@@ -638,15 +810,45 @@
     if (foot) foot.innerHTML = previewFooter(item, totals);
     const railMeta = view.querySelector(`[data-rail-meta="${item.id}"]`);
     if (railMeta) railMeta.textContent = `${fmt(item.params.width)} × ${fmt(item.params.height)} × ${fmt(item.params.depth)} · ${I18n.count(totals.units, "part")}`;
-    const note = view.querySelector("[data-preview-note]");
-    if (note) note.textContent = item.params.doors > 0 ? I18n.t("designer.previewNote") : I18n.t("designer.itemToolbarHint");
+    updatePreviewModeUi(view, item);
     view.querySelectorAll("[data-value-for]").forEach((el) => {
       const key = el.getAttribute("data-value-for");
       if (key in item.params) el.textContent = `${fmt(item.params[key])} ${I18n.t("common.mm")}`;
     });
     syncStepperStates(view, item);
+    syncPreviewControls(view, item);
     requestRedraw();
     App.persist(false);
+  }
+
+  function shelfSlotAt(canvas, clientX, clientY) {
+    if (!previewGeometry || !Array.isArray(previewGeometry.shelfHits)) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    let best = null;
+    let bestDistance = Infinity;
+    previewGeometry.shelfHits.forEach((hit) => {
+      if (x < hit.x || x > hit.x + hit.w || y < hit.y || y > hit.y + hit.h) return;
+      const distance = Math.abs(y - (hit.y + hit.h / 2));
+      if (distance < bestDistance) {
+        best = hit;
+        bestDistance = distance;
+      }
+    });
+    return best ? best.slot : null;
+  }
+
+  function toggleShelf(view, slot) {
+    const item = App.activeItem();
+    if (!item) return;
+    const total = Math.max(0, Math.round(Number(item.params.shelves) || 0));
+    if (slot < 1 || slot > total) return;
+    const removed = Data.shelfRemovalSet(item);
+    if (removed.has(slot)) removed.delete(slot);
+    else removed.add(slot);
+    item.params.removedShelves = Array.from(removed).sort((a, b) => a - b);
+    updateItemDerived(view);
   }
 
   function setParam(view, key, raw) {
@@ -658,6 +860,9 @@
     let value = UI.parseNumber(raw, item.params[key]);
     value = Math.round(Utils.clamp(value, range[0], range[1]) / range[2]) * range[2];
     item.params[key] = value;
+    if (key === "shelves") {
+      item.params.removedShelves = Data.normalizeShelfRemoval(item.params.removedShelves, value);
+    }
     view.querySelectorAll(`[data-param="${key}"]`).forEach((input) => {
       if (input.value !== String(value)) input.value = value;
     });
@@ -750,6 +955,176 @@
     UI.toast(I18n.t("designer.duplicated"));
   }
 
+  function attachResizeHandle(handle, view) {
+    let drag = null;
+
+    const finish = (event) => {
+      if (!drag) return;
+      if (event && event.pointerId != null && event.pointerId !== drag.pointerId) return;
+      try { handle.releasePointerCapture(drag.pointerId); } catch (_) {}
+      drag = null;
+      handle.classList.remove("dragging");
+      document.body.classList.remove("pc-resizing");
+      delete document.body.dataset.resizeAxis;
+      App.persist(false);
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !previewGeometry) return;
+      const item = App.activeItem();
+      if (!item) return;
+      const axis = handle.getAttribute("data-resize");
+      const range = Data.PARAM_RANGES[item.template][axis];
+      if (!range) return;
+      event.preventDefault();
+      drag = {
+        pointerId: event.pointerId,
+        axis,
+        itemId: item.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        value: Number(item.params[axis]) || 0,
+        scale: previewGeometry.scale,
+      };
+      try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+      handle.classList.add("dragging");
+      document.body.classList.add("pc-resizing");
+      document.body.dataset.resizeAxis = axis;
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const item = App.activeItem();
+      if (!item || item.id !== drag.itemId) return;
+      const range = Data.PARAM_RANGES[item.template][drag.axis];
+      if (!range) return;
+      const delta = drag.axis === "width" ? event.clientX - drag.startX : drag.startY - event.clientY;
+      const raw = drag.value + delta / Math.max(0.05, drag.scale);
+      const step = range[2];
+      const next = Math.round(Utils.clamp(raw, range[0], range[1]) / step) * step;
+      if (next !== item.params[drag.axis]) setParam(view, drag.axis, next);
+    });
+
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+    handle.addEventListener("lostpointercapture", finish);
+
+    handle.addEventListener("keydown", (event) => {
+      const forward = event.key === "ArrowRight" || event.key === "ArrowUp";
+      const back = event.key === "ArrowLeft" || event.key === "ArrowDown";
+      if (!forward && !back) return;
+      const axis = handle.getAttribute("data-resize");
+      const item = App.activeItem();
+      if (!item) return;
+      const range = Data.PARAM_RANGES[item.template][axis];
+      if (!range) return;
+      event.preventDefault();
+      setParam(view, axis, (Number(item.params[axis]) || 0) + (forward ? range[2] : -range[2]));
+    });
+  }
+
+  function onViewInput(event) {
+    const view = event.currentTarget;
+    const target = event.target;
+    if (target.matches("input[type='range'][data-param]")) {
+      setParam(view, target.getAttribute("data-param"), target.value);
+    }
+  }
+
+  function onViewChange(event) {
+    const view = event.currentTarget;
+    const target = event.target;
+    if (target.matches("input[type='number'][data-param]")) {
+      setParam(view, target.getAttribute("data-param"), target.value);
+      return;
+    }
+    if (target.matches("select[data-material]")) {
+      const current = App.activeItem();
+      const field = target.getAttribute("data-material");
+      if (current && field) {
+        current[field] = target.value;
+        App.persist(true);
+        App.render({ animate: false });
+        UI.toast(I18n.t("toast.saved"));
+      }
+      return;
+    }
+    if (target.matches("input[data-toggle='back']")) {
+      const current = App.activeItem();
+      if (current) {
+        current.params.back = target.checked;
+        App.persist(true);
+        App.render({ animate: false });
+      }
+    }
+  }
+
+  function onViewClick(event) {
+    const view = event.currentTarget;
+    const step = event.target.closest("[data-step-key]");
+    if (step) {
+      const key = step.getAttribute("data-step-key");
+      const current = App.activeItem();
+      if (!current) return;
+      const range = Data.PARAM_RANGES[current.template][key];
+      if (!range) return;
+      const next = Utils.clamp(current.params[key] + Number(step.getAttribute("data-step")), range[0], range[1]);
+      setParam(view, key, next);
+      return;
+    }
+    const previewStep = event.target.closest("[data-preview-step]");
+    if (previewStep) {
+      const key = previewStep.getAttribute("data-preview-step");
+      const dir = Number(previewStep.getAttribute("data-dir")) || 0;
+      const current = App.activeItem();
+      if (!current || !dir) return;
+      setParam(view, key, (Number(current.params[key]) || 0) + dir);
+      return;
+    }
+    const canvas = event.target.closest("[data-preview-canvas]");
+    if (canvas && previewMode === "layout") {
+      const slot = shelfSlotAt(canvas, event.clientX, event.clientY);
+      if (slot) {
+        toggleShelf(view, slot);
+        return;
+      }
+    }
+    const mode = event.target.closest("[data-preview-mode]");
+    if (mode) {
+      previewMode = mode.getAttribute("data-preview-mode");
+      hoverShelfSlot = null;
+      view.querySelectorAll("[data-preview-mode]").forEach((btn) => btn.classList.toggle("active", btn === mode));
+      const wrap = view.querySelector("[data-preview-wrap]");
+      if (wrap) wrap.dataset.mode = previewMode;
+      const previewCanvas = view.querySelector("[data-preview-canvas]");
+      if (previewCanvas) previewCanvas.style.cursor = "";
+      const current = App.activeItem();
+      if (current) updatePreviewModeUi(view, current);
+      requestRedraw();
+    }
+  }
+
+  function onViewPointerMove(event) {
+    const canvas = event.target.closest ? event.target.closest("[data-preview-canvas]") : null;
+    if (!canvas) {
+      if (hoverShelfSlot !== null) {
+        hoverShelfSlot = null;
+        requestRedraw();
+      }
+      return;
+    }
+    if (previewMode !== "layout") {
+      if (canvas.style.cursor) canvas.style.cursor = "";
+      return;
+    }
+    const slot = shelfSlotAt(canvas, event.clientX, event.clientY);
+    canvas.style.cursor = slot ? "pointer" : "";
+    if (slot !== hoverShelfSlot) {
+      hoverShelfSlot = slot;
+      requestRedraw();
+    }
+  }
+
   /* ----------------------------------------------------------------- mount */
 
   function mount(view) {
@@ -799,59 +1174,18 @@
       });
     }
 
-    view.addEventListener("input", (event) => {
-      const target = event.target;
-      if (target.matches("input[type='range'][data-param]")) {
-        setParam(view, target.getAttribute("data-param"), target.value);
-      }
-    });
+    /* The #view element survives re-renders, so re-bind stable handlers idempotently. */
+    view.removeEventListener("input", onViewInput);
+    view.removeEventListener("change", onViewChange);
+    view.removeEventListener("click", onViewClick);
+    view.removeEventListener("pointermove", onViewPointerMove);
+    view.addEventListener("input", onViewInput);
+    view.addEventListener("change", onViewChange);
+    view.addEventListener("click", onViewClick);
+    view.addEventListener("pointermove", onViewPointerMove);
 
-    view.addEventListener("change", (event) => {
-      const target = event.target;
-      if (target.matches("input[type='number'][data-param]")) {
-        setParam(view, target.getAttribute("data-param"), target.value);
-        return;
-      }
-      if (target.matches("select[data-material]")) {
-        const current = App.activeItem();
-        const field = target.getAttribute("data-material");
-        if (current && field) {
-          current[field] = target.value;
-          App.persist(true);
-          App.render({ animate: false });
-          UI.toast(I18n.t("toast.saved"));
-        }
-        return;
-      }
-      if (target.matches("input[data-toggle='back']")) {
-        const current = App.activeItem();
-        if (current) {
-          current.params.back = target.checked;
-          App.persist(true);
-          App.render({ animate: false });
-        }
-      }
-    });
-
-    view.addEventListener("click", (event) => {
-      const step = event.target.closest("[data-step-key]");
-      if (step) {
-        const key = step.getAttribute("data-step-key");
-        const current = App.activeItem();
-        if (!current) return;
-        const range = Data.PARAM_RANGES[current.template][key];
-        if (!range) return;
-        const next = Utils.clamp(current.params[key] + Number(step.getAttribute("data-step")), range[0], range[1]);
-        setParam(view, key, next);
-        return;
-      }
-      const mode = event.target.closest("[data-preview-mode]");
-      if (mode) {
-        previewMode = mode.getAttribute("data-preview-mode");
-        view.querySelectorAll("[data-preview-mode]").forEach((btn) => btn.classList.toggle("active", btn === mode));
-        requestRedraw();
-      }
-    });
+    hoverShelfSlot = null;
+    view.querySelectorAll("[data-resize]").forEach((handle) => attachResizeHandle(handle, view));
 
     const wrap = view.querySelector("[data-preview-wrap]");
     if (resizeObserver) resizeObserver.disconnect();

@@ -269,13 +269,7 @@
             danger: true,
           }).then((confirmed) => {
             if (!confirmed) return;
-            try {
-              localStorage.removeItem("panelcraft.state.v1");
-              localStorage.removeItem("panelcraft.theme");
-              localStorage.removeItem("panelcraft.lang");
-            } catch (_) {}
-            location.hash = "#/designer";
-            location.reload();
+            App.clearAll();
           });
         });
       }
